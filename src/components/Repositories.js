@@ -48,9 +48,11 @@ export default function Repositories({ installationId }) {
             <TableCell>Visibility</TableCell>
             <TableCell>Created</TableCell>
             <TableCell>Last Checked</TableCell>
-            {Object.keys(data.repositories?.[0].status?.checks || {}).map(k => (
-              <TableCell key={k}>{startCase(k)}</TableCell>
-            ))}
+            {Object.keys(data.repositories?.[0]?.status?.checks || {}).map(
+              k => (
+                <TableCell key={k}>{startCase(k)}</TableCell>
+              )
+            )}
           </TableRow>
         </TableHead>
         <TableBody>
