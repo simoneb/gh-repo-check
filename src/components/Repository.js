@@ -14,6 +14,8 @@ function check(value) {
 }
 
 export default function Repository({ repository }) {
+  const { status } = repository
+
   return (
     <TableRow>
       <TableCell>
@@ -25,9 +27,11 @@ export default function Repository({ repository }) {
       <TableCell>{repository.private ? '🔒' : '🌍'}</TableCell>
       <TableCell>{new Date(repository.created_at).toLocaleString()}</TableCell>
       <TableCell>
-        {new Date(repository.status?.lastChecked).toLocaleString()}
+        {status?.lastChecked
+          ? new Date(status.lastChecked).toLocaleString()
+          : '-'}
       </TableCell>
-      {Object.entries(repository.status?.checks || {}).map(([k, v]) => (
+      {Object.entries(status?.checks || {}).map(([k, v]) => (
         <TableCell key={k}>{check(v)}</TableCell>
       ))}
     </TableRow>
