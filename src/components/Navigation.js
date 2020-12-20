@@ -78,7 +78,7 @@ export default function Navigation() {
               </MenuItem>
               <MenuItem
                 component={RouterLink}
-                to="/playground"
+                to="/graphql"
                 onClick={handleClose}
               >
                 GraphQL Playground
