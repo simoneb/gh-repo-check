@@ -2,12 +2,15 @@ require('dotenv').config()
 
 const jwt = require('jsonwebtoken')
 const fetch = require('node-fetch')
+const Redis = require('ioredis')
 
-const { privateKey, appId, logLevel } = require('./config')
+const { privateKey, appId, logLevel, redisUrl } = require('./config')
 
 const logger = require('pino')({
   level: logLevel,
 })
+
+const redis = new Redis(redisUrl)
 
 async function run() {
   const appToken = getAppToken()
@@ -29,7 +32,7 @@ async function run() {
   await Promise.all(installations.map(i => processInstallation(i, appToken)))
 }
 
-run()
+run().then(() => redis.quit())
 
 async function processInstallation(installation, appToken) {
   const accessToken = await getInstallationToken(installation, appToken)
@@ -47,7 +50,9 @@ async function processInstallation(installation, appToken) {
     `found ${repositories.length} repository for installation ${installation.id}`
   )
 
-  return Promise.all(repositories.map(r => processRepository(r, accessToken)))
+  return Promise.all(
+    repositories.map(r => processRepository(installation, r, accessToken))
+  )
 }
 
 async function getInstallationToken(installation, appToken) {
@@ -66,7 +71,8 @@ async function getInstallationToken(installation, appToken) {
   return accessToken
 }
 
-async function processRepository(repository, accessToken) {
+async function processRepository(installation, repository, accessToken) {
+  const { id: installationId } = installation
   const {
     full_name: fullName,
     branches_url: branchesUrl,
@@ -74,6 +80,14 @@ async function processRepository(repository, accessToken) {
   } = repository
 
   logger.info(`processing repository ${fullName}`)
+
+  if (!defaultBranch) {
+    return redis.hset(
+      installationId,
+      fullName,
+      JSON.stringify({ hasDefaultBranch: false })
+    )
+  }
 
   const branchRes = await fetch(
     branchesUrl.replace('{/branch}', `/${defaultBranch}`),
@@ -90,8 +104,26 @@ async function processRepository(repository, accessToken) {
   const { protected: isProtected, protection } = branch
 
   logger.info(
-    { fullName, defaultBranch, protected: isProtected, protection },
+    {
+      installationId,
+      fullName,
+      defaultBranch,
+      protected: isProtected,
+      protection,
+    },
     `processed repository ${fullName}`
+  )
+
+  return redis.hset(
+    installationId,
+    fullName,
+    JSON.stringify({
+      hasDefaultBranch: true,
+      defaultBranchProtected: isProtected,
+      protectionExcludesAdmins: !isProtected
+        ? undefined
+        : protection.required_status_checks.enforcement_level === 'non_admins',
+    })
   )
 }
 
