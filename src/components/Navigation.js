@@ -9,6 +9,7 @@ import {
   Menu,
   MenuItem,
   Toolbar,
+  Tooltip,
   Typography,
 } from '@material-ui/core'
 import { Link as RouterLink } from 'react-router-dom'
@@ -18,11 +19,13 @@ import OpenInNew from '@material-ui/icons/OpenInNew'
 
 import { AuthContext } from './AuthProvider'
 import { clientId } from '../config'
+import { useQuery } from 'graphql-hooks'
 
 const useStyles = makeStyles(theme => ({
   actions: {
     display: 'flex',
-    marginLefgt: 'auto',
+    alignItems: 'center',
+    marginLeft: 'auto',
     '& > * + *': {
       marginLeft: theme.spacing(2),
     },
@@ -33,6 +36,15 @@ export default function Navigation() {
   const { logout } = useContext(AuthContext)
   const classes = useStyles()
   const [anchorEl, setAnchorEl] = useState()
+
+  const { data: user, loading: userLoading } = useQuery(`{
+    viewer {
+      login
+      name
+      avatarUrl
+      url
+    }
+  }`)
 
   const handleClick = event => {
     setAnchorEl(event.currentTarget)
@@ -52,7 +64,15 @@ export default function Navigation() {
               <Typography variant="h6">GitHub Repo Check</Typography>
             </Box>
           </Link>
-          <Box ml="auto" className={classes.actions}>
+          <Box className={classes.actions}>
+            {!userLoading && (
+              <Tooltip title={`Hi, ${user.viewer.name}!`}>
+                <Link href={user.viewer.url} target="_blank">
+                  <Box component={Avatar} ml={1} src={user.viewer.avatarUrl} />
+                </Link>
+              </Tooltip>
+            )}
+
             <IconButton color="inherit" onClick={handleClick}>
               <MoreVert />
             </IconButton>

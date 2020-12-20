@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react'
-import { Box } from '@material-ui/core'
+import { Box, Paper } from '@material-ui/core'
 import { useHistory, useParams } from 'react-router-dom'
 
 import InstallationSelector from './InstallationSelector'
@@ -16,14 +16,16 @@ export default function Dashboard() {
     [history]
   )
   return (
-    <Box mt={2}>
-      <Box ml={1} mb={1}>
-        <InstallationSelector
-          installationId={installationId}
-          onChange={handleInstallationChange}
-        />
-      </Box>
-      {installationId && <Repositories installationId={installationId} />}
+    <Box m={2} mt={2}>
+      <InstallationSelector
+        installationId={installationId}
+        onChange={handleInstallationChange}
+      />
+      {installationId && (
+        <Paper variant="outlined">
+          <Repositories installationId={installationId} />
+        </Paper>
+      )}
     </Box>
   )
 }

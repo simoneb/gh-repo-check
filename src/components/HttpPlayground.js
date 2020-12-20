@@ -10,7 +10,7 @@ export default function HttpPlayground() {
 
   const requestInterceptor = useCallback(
     req => {
-      req.headers.authorization = `bearer ${token?.accessToken}`
+      req.headers.authorization = `bearer ${token?.access_token}`
       return req
     },
     [token]

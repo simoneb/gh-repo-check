@@ -5,10 +5,12 @@ import { BrowserRouter } from 'react-router-dom'
 import AuthProvider, { readTokenFromStorage } from './components/AuthProvider'
 import Routes from './components/Routes'
 import { githubGraphQLApi } from './config'
+import { blue, grey } from '@material-ui/core/colors'
 
 const theme = createMuiTheme({
   palette: {
-    type: 'light',
+    primary: blue,
+    secondary: grey,
   },
 })
 

@@ -75,11 +75,13 @@ async function calculateStatus(repository, accessToken) {
   const {
     branches_url: branchesUrl,
     default_branch: defaultBranch,
+    delete_branch_on_merge: deleteBranchOnMerge,
   } = repository
 
   const status = {
     lastChecked: new Date(),
     checks: {
+      deleteBranchOnMerge,
       hasDefaultBranch: null,
       defaultBranchProtected: null,
       protectionExcludesAdmins: null,

@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react'
 import {
+  Box,
   CircularProgress,
   Table,
   TableBody,
@@ -35,7 +36,11 @@ export default function Repositories({ installationId }) {
   }, [])
 
   if (loading) {
-    return <CircularProgress />
+    return (
+      <Box m={2}>
+        <CircularProgress />
+      </Box>
+    )
   }
 
   return (
