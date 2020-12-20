@@ -1,25 +1,38 @@
-import logo from './logo.svg';
-import './App.css';
+import React from 'react'
+import { createMuiTheme, CssBaseline, ThemeProvider } from '@material-ui/core'
+import { GraphQLClient, ClientContext } from 'graphql-hooks'
+import { BrowserRouter } from 'react-router-dom'
+import AuthProvider, { readTokenFromStorage } from './components/AuthProvider'
+import Routes from './components/Routes'
+import { githubGraphQLApi } from './config'
 
-function App() {
-  return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
-  );
+const theme = createMuiTheme({
+  palette: {
+    type: 'light',
+  },
+})
+
+const client = new GraphQLClient({
+  url: githubGraphQLApi,
+})
+
+const token = readTokenFromStorage()
+
+if (token) {
+  client.setHeader('authorization', `bearer ${token.access_token}`)
 }
 
-export default App;
+export default function App() {
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <ClientContext.Provider value={client}>
+        <AuthProvider>
+          <BrowserRouter>
+            <Routes />
+          </BrowserRouter>
+        </AuthProvider>
+      </ClientContext.Provider>
+    </ThemeProvider>
+  )
+}
