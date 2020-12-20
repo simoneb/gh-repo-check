@@ -9,15 +9,13 @@ import {
   Tooltip,
   Typography,
 } from '@material-ui/core'
-import { useHistory } from 'react-router-dom'
 import Settings from '@material-ui/icons/Settings'
 import AddCircle from '@material-ui/icons/AddCircle'
 
 import useGithub from '../hooks/useGithub'
 import { appPublicLink } from '../config'
 
-export default function InstallationSelector({ installationId }) {
-  const history = useHistory()
+export default function InstallationSelector({ installationId, onChange }) {
   const [{ data, loading }] = useGithub({
     url: 'user/installations',
     params: {
@@ -44,7 +42,7 @@ export default function InstallationSelector({ installationId }) {
         <Select
           displayEmpty
           variant="outlined"
-          onChange={e => history.push(`/${e.target.value}`)}
+          onChange={e => onChange(e.target.value)}
           value={installationId || ''}
           style={{ minWidth: 250 }}
         >

@@ -10,15 +10,17 @@ import {
   TablePagination,
   TableRow,
 } from '@material-ui/core'
-import useGithub from '../hooks/useGithub'
+import startCase from 'lodash.startcase'
+
 import Repository from './Repository'
+import useApi from '../hooks/useApi'
 
 export default function Repositories({ installationId }) {
   const [pageNumber, setPageNumber] = useState(1)
   const [pageSize, setPageSize] = useState(10)
 
-  const [{ data, loading }] = useGithub({
-    url: `/user/installations/${installationId}/repositories`,
+  const [{ data, loading }] = useApi({
+    url: `/repositories/${installationId}`,
     params: {
       per_page: pageSize,
       page: pageNumber,
@@ -45,10 +47,10 @@ export default function Repositories({ installationId }) {
             <TableCell>Stars</TableCell>
             <TableCell>Visibility</TableCell>
             <TableCell>Created</TableCell>
-            <TableCell>Delete branch on merge</TableCell>
-            <TableCell>Default branch</TableCell>
-            <TableCell>Default branch protected</TableCell>
-            <TableCell>Enforce default branch protection on admins</TableCell>
+            <TableCell>Last Checked</TableCell>
+            {Object.keys(data.repositories?.[0].status.checks || {}).map(k => (
+              <TableCell key={k}>{startCase(k)}</TableCell>
+            ))}
           </TableRow>
         </TableHead>
         <TableBody>

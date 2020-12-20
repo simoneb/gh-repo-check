@@ -71,22 +71,25 @@ async function getInstallationToken(installation, appToken) {
   return accessToken
 }
 
-async function processRepository(installation, repository, accessToken) {
-  const { id: installationId } = installation
+async function calculateStatus(repository, accessToken) {
   const {
-    full_name: fullName,
     branches_url: branchesUrl,
     default_branch: defaultBranch,
   } = repository
 
-  logger.info(`processing repository ${fullName}`)
+  const status = {
+    lastChecked: new Date(),
+    checks: {
+      hasDefaultBranch: null,
+      defaultBranchProtected: null,
+      protectionExcludesAdmins: null,
+    },
+  }
+
+  status.checks.hasDefaultBranch = !!defaultBranch
 
   if (!defaultBranch) {
-    return redis.hset(
-      installationId,
-      fullName,
-      JSON.stringify({ hasDefaultBranch: false })
-    )
+    return status
   }
 
   const branchRes = await fetch(
@@ -103,27 +106,29 @@ async function processRepository(installation, repository, accessToken) {
 
   const { protected: isProtected, protection } = branch
 
-  logger.info(
-    {
-      installationId,
-      fullName,
-      defaultBranch,
-      protected: isProtected,
-      protection,
-    },
-    `processed repository ${fullName}`
-  )
+  status.checks.defaultBranchProtected = isProtected
+
+  if (!isProtected) {
+    return status
+  }
+
+  status.checks.protectionExcludesAdmins =
+    protection &&
+    protection.required_status_checks.enforcement_level === 'non_admins'
+
+  return status
+}
+
+async function processRepository(installation, repository, accessToken) {
+  const { id: installationId } = installation
+  const { full_name: fullName } = repository
+
+  logger.info(`processing repository ${fullName}`)
 
   return redis.hset(
     installationId,
     fullName,
-    JSON.stringify({
-      hasDefaultBranch: true,
-      defaultBranchProtected: isProtected,
-      protectionExcludesAdmins: !isProtected
-        ? undefined
-        : protection.required_status_checks.enforcement_level === 'non_admins',
-    })
+    JSON.stringify(await calculateStatus(repository, accessToken))
   )
 }
 

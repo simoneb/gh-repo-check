@@ -1,28 +1,6 @@
-import Axios from 'axios'
-import { makeUseAxios } from 'axios-hooks'
-
-import { readTokenFromStorage } from '../components/AuthProvider'
 import { githubApi } from '../config'
+import makeUseAuthenticatedApi from './makeUseAuthenticatedApi'
 
-export const github = Axios.create({
-  baseURL: githubApi,
-})
-
-github.interceptors.request.use(config => {
-  const token = readTokenFromStorage()
-
-  if (token) {
-    config.headers = {
-      ...config.headers,
-      authorization: `bearer ${token.access_token}`,
-    }
-  }
-
-  return config
-})
-
-const useGithub = makeUseAxios({
-  axios: github,
-})
+const useGithub = makeUseAuthenticatedApi(githubApi)
 
 export default useGithub
