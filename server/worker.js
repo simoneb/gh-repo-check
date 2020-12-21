@@ -3,6 +3,14 @@ require('dotenv').config()
 const jwt = require('jsonwebtoken')
 const fetch = require('node-fetch')
 const Redis = require('ioredis')
+const YAML = require('yaml')
+const jsonata = require('jsonata')
+
+const actionName = /fastify\/github-action-merge-dependabot/
+
+const usesActionExpression = jsonata(
+  `$exists(jobs.*.steps[uses ~> ${actionName}])`
+)
 
 const { privateKey, appId, logLevel, redisUrl } = require('./config')
 
@@ -47,7 +55,7 @@ async function processInstallation(installation, appToken) {
   const { repositories } = await installationReposRes.json()
 
   logger.info(
-    `found ${repositories.length} repository for installation ${installation.id}`
+    `found ${repositories.length} repositories for installation ${installation.id} on ${installation.account.login}`
   )
 
   return Promise.all(
@@ -72,11 +80,7 @@ async function getInstallationToken(installation, appToken) {
 }
 
 async function calculateStatus(repository, accessToken) {
-  const {
-    branches_url: branchesUrl,
-    default_branch: defaultBranch,
-    delete_branch_on_merge: deleteBranchOnMerge,
-  } = repository
+  const { delete_branch_on_merge: deleteBranchOnMerge } = repository
 
   const status = {
     lastChecked: new Date(),
@@ -85,13 +89,83 @@ async function calculateStatus(repository, accessToken) {
       hasDefaultBranch: null,
       defaultBranchProtected: null,
       protectionExcludesAdmins: null,
+      usesDependabotMergeAction: null,
     },
   }
+
+  await calculateBranchStatus(repository, accessToken, status)
+  await calculateUsesDependabotMergeActionAction(
+    repository,
+    accessToken,
+    status
+  )
+
+  return status
+}
+
+async function calculateUsesDependabotMergeActionAction(
+  repository,
+  accessToken,
+  status
+) {
+  const workflowsRes = await fetch(`${repository.url}/actions/workflows`, {
+    headers: {
+      accept: 'application/vnd.github.v3+json',
+      authorization: `bearer ${accessToken.token}`,
+    },
+  })
+  const workflows = await workflowsRes.json()
+
+  status.checks.usesDependabotMergeAction = await workflowsUsePublishAction(
+    repository,
+    workflows,
+    accessToken
+  )
+}
+
+async function workflowsUsePublishAction(repository, workflows, accessToken) {
+  const { contents_url: contentsUrl } = repository
+
+  for (const workflow of workflows.workflows) {
+    const workflowFileRes = await fetch(
+      contentsUrl.replace('{+path}', workflow.path),
+      {
+        headers: {
+          accept: 'application/vnd.github.v3+json',
+          authorization: `bearer ${accessToken.token}`,
+        },
+      }
+    )
+
+    const workflowFile = await workflowFileRes.json()
+
+    const workflowContents = Buffer.from(
+      workflowFile.content,
+      workflowFile.encoding
+    ).toString('utf-8')
+
+    const workflowYaml = YAML.parse(workflowContents)
+
+    const usesAction = usesActionExpression.evaluate(workflowYaml)
+
+    if (usesAction) {
+      return true
+    }
+  }
+
+  return false
+}
+
+async function calculateBranchStatus(repository, accessToken, status) {
+  const {
+    branches_url: branchesUrl,
+    default_branch: defaultBranch,
+  } = repository
 
   status.checks.hasDefaultBranch = !!defaultBranch
 
   if (!defaultBranch) {
-    return status
+    return
   }
 
   const branchRes = await fetch(
@@ -111,14 +185,12 @@ async function calculateStatus(repository, accessToken) {
   status.checks.defaultBranchProtected = isProtected
 
   if (!isProtected) {
-    return status
+    return
   }
 
   status.checks.protectionExcludesAdmins =
     protection &&
     protection.required_status_checks.enforcement_level === 'non_admins'
-
-  return status
 }
 
 async function processRepository(installation, repository, accessToken) {

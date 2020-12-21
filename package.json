@@ -32,6 +32,7 @@
     "graphql-playground-react": "^1.7.27",
     "http-errors": "^1.8.0",
     "ioredis": "^4.19.4",
+    "jsonata": "^1.8.4",
     "jsonwebtoken": "^8.5.1",
     "lodash.startcase": "^4.4.0",
     "node-fetch": "^2.6.1",
@@ -41,7 +42,8 @@
     "react-router-dom": "5.2.0",
     "react-scripts": "4.0.1",
     "swagger-ui-react": "^3.38.0",
-    "web-vitals": "^0.2.4"
+    "web-vitals": "^0.2.4",
+    "yaml": "^1.10.0"
   },
   "devDependencies": {
     "npm-run-all": "^4.1.5",
