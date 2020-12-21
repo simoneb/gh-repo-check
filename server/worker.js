@@ -127,22 +127,39 @@ async function workflowsUsePublishAction(repository, workflows, accessToken) {
   const { contents_url: contentsUrl } = repository
 
   for (const workflow of workflows.workflows) {
-    const workflowFileRes = await fetch(
-      contentsUrl.replace('{+path}', workflow.path),
-      {
-        headers: {
-          accept: 'application/vnd.github.v3+json',
-          authorization: `bearer ${accessToken.token}`,
-        },
-      }
+    // ignore workflows without a path or which are not active
+    if (!workflow.path || workflow.state !== 'active') {
+      continue
+    }
+
+    const workflowFileUrl = contentsUrl.replace(
+      '{+path}',
+      encodeURIComponent(workflow.path)
     )
+
+    const workflowFileRes = await fetch(workflowFileUrl, {
+      headers: {
+        accept: 'application/vnd.github.v3+json',
+        authorization: `bearer ${accessToken.token}`,
+      },
+    })
 
     const workflowFile = await workflowFileRes.json()
 
-    const workflowContents = Buffer.from(
-      workflowFile.content,
-      workflowFile.encoding
-    ).toString('utf-8')
+    let workflowContents
+
+    try {
+      workflowContents = Buffer.from(
+        workflowFile.content,
+        workflowFile.encoding
+      ).toString('utf-8')
+    } catch (err) {
+      // ignore workflows which, when
+      console.error(
+        `ERROR: cannot read workflow ${workflowFileUrl} with path ${workflow.path} for ${repository.full_name}`
+      )
+      continue
+    }
 
     const workflowYaml = YAML.parse(workflowContents)
 
