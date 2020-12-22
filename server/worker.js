@@ -217,9 +217,12 @@ async function processWorkflows(
     ),
   ]
 
-  checks.usesNodeLts = allNodeVersions.some(v =>
-    semver.satisfies(nodeDistTags.lts, v)
-  )
+  if (allNodeVersions.length) {
+    checks.usesNodeLts = allNodeVersions.some(v =>
+      semver.satisfies(nodeDistTags.lts, v)
+    )
+  }
+
   checks.usesDependabotMergeAction = usesDependabotMergeAction
 }
 
