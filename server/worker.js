@@ -5,14 +5,25 @@ const fetch = require('node-fetch')
 const Redis = require('ioredis')
 const YAML = require('yaml')
 const jsonata = require('jsonata')
+const npm = require('npm')
+const { promisify } = require('util')
+const semver = require('semver')
+
+const npmLoad = promisify(npm.load)
+const npmDistTags = promisify(npm.distTags)
 
 const actionName = /fastify\/github-action-merge-dependabot/
 
-const usesActionExpression = jsonata(
+const usesDependabotMergeActionExpression = jsonata(
   `$exists(jobs.*.steps[uses ~> ${actionName}])`
 )
 
+const nodeVersionsExpression = jsonata(
+  `$distinct(jobs.*.steps[uses ~> /actions\\/setup-node/].with.'node-version')`
+)
+
 const { privateKey, appId, logLevel, redisUrl } = require('./config')
+const { expandWorkflow } = require('./lib/workflow')
 
 const logger = require('pino')({
   level: logLevel,
@@ -21,6 +32,9 @@ const logger = require('pino')({
 const redis = new Redis(redisUrl)
 
 async function run() {
+  await npmLoad()
+  const nodeDistTags = await npmDistTags('node')
+
   const appToken = getAppToken()
 
   const installationsRes = await fetch(
@@ -37,12 +51,17 @@ async function run() {
 
   logger.info(`found ${installations.length} installations`)
 
-  await Promise.all(installations.map(i => processInstallation(i, appToken)))
+  await Promise.all(
+    installations.map(i => processInstallation(i, appToken, nodeDistTags))
+  )
 }
 
-run().then(() => redis.quit())
+run().then(
+  () => redis.quit(),
+  () => redis.quit()
+)
 
-async function processInstallation(installation, appToken) {
+async function processInstallation(installation, appToken, nodeDistTags) {
   const accessToken = await getInstallationToken(installation, appToken)
 
   const installationReposRes = await fetch(installation.repositories_url, {
@@ -59,7 +78,9 @@ async function processInstallation(installation, appToken) {
   )
 
   return Promise.all(
-    repositories.map(r => processRepository(installation, r, accessToken))
+    repositories.map(r =>
+      processRepository(installation, r, accessToken, nodeDistTags)
+    )
   )
 }
 
@@ -79,7 +100,7 @@ async function getInstallationToken(installation, appToken) {
   return accessToken
 }
 
-async function calculateStatus(repository, accessToken) {
+async function calculateStatus(repository, accessToken, nodeDistTags) {
   const { delete_branch_on_merge: deleteBranchOnMerge } = repository
 
   const status = {
@@ -90,23 +111,21 @@ async function calculateStatus(repository, accessToken) {
       defaultBranchProtected: null,
       protectionExcludesAdmins: null,
       usesDependabotMergeAction: null,
+      usesNodeLts: null,
     },
   }
 
-  await calculateBranchStatus(repository, accessToken, status)
-  await calculateUsesDependabotMergeActionAction(
-    repository,
-    accessToken,
-    status
-  )
+  await calculateBranch(repository, accessToken, status)
+  await calculateWorkflows(repository, accessToken, status, nodeDistTags)
 
   return status
 }
 
-async function calculateUsesDependabotMergeActionAction(
+async function calculateWorkflows(
   repository,
   accessToken,
-  status
+  status,
+  nodeDistTags
 ) {
   const workflowsRes = await fetch(`${repository.url}/actions/workflows`, {
     headers: {
@@ -116,64 +135,95 @@ async function calculateUsesDependabotMergeActionAction(
   })
   const workflows = await workflowsRes.json()
 
-  status.checks.usesDependabotMergeAction = await workflowsUsePublishAction(
+  await processWorkflows(
+    status.checks,
+    repository,
+    workflows,
+    accessToken,
+    nodeDistTags
+  )
+}
+
+async function loadAllWorkflowsFiles(repository, workflows, accessToken) {
+  const { contents_url: contentsUrl } = repository
+
+  const workflowsContents = await Promise.all(
+    workflows.workflows.map(async workflow => {
+      if (!workflow.path || workflow.state !== 'active') {
+        return
+      }
+
+      const workflowFileUrl = contentsUrl.replace(
+        '{+path}',
+        encodeURIComponent(workflow.path)
+      )
+
+      const workflowFileRes = await fetch(workflowFileUrl, {
+        headers: {
+          accept: 'application/vnd.github.v3+json',
+          authorization: `bearer ${accessToken.token}`,
+        },
+      })
+
+      const workflowFile = await workflowFileRes.json()
+
+      let workflowContents
+
+      try {
+        workflowContents = Buffer.from(
+          workflowFile.content,
+          workflowFile.encoding
+        ).toString('utf-8')
+      } catch (err) {
+        // ignore workflows which, when
+        console.error(
+          `ERROR: cannot read workflow ${workflowFileUrl} with path ${workflow.path} for ${repository.full_name}`
+        )
+        return
+      }
+
+      return workflowContents
+    })
+  )
+
+  return workflowsContents.filter(Boolean)
+}
+
+async function processWorkflows(
+  checks,
+  repository,
+  workflows,
+  accessToken,
+  nodeDistTags
+) {
+  const workflowsYamlStrings = await loadAllWorkflowsFiles(
     repository,
     workflows,
     accessToken
   )
+
+  const workflowsObjects = workflowsYamlStrings.map(w => YAML.parse(w))
+
+  const usesDependabotMergeAction = workflowsObjects.some(w =>
+    usesDependabotMergeActionExpression.evaluate(w)
+  )
+
+  const allNodeVersions = [
+    ...new Set(
+      workflowsYamlStrings
+        .flatMap(w => nodeVersionsExpression.evaluate(expandWorkflow(w)))
+        .filter(Boolean)
+        .map(v => v.toString())
+    ),
+  ]
+
+  checks.usesNodeLts = allNodeVersions.some(v =>
+    semver.satisfies(nodeDistTags.lts, v)
+  )
+  checks.usesDependabotMergeAction = usesDependabotMergeAction
 }
 
-async function workflowsUsePublishAction(repository, workflows, accessToken) {
-  const { contents_url: contentsUrl } = repository
-
-  for (const workflow of workflows.workflows) {
-    // ignore workflows without a path or which are not active
-    if (!workflow.path || workflow.state !== 'active') {
-      continue
-    }
-
-    const workflowFileUrl = contentsUrl.replace(
-      '{+path}',
-      encodeURIComponent(workflow.path)
-    )
-
-    const workflowFileRes = await fetch(workflowFileUrl, {
-      headers: {
-        accept: 'application/vnd.github.v3+json',
-        authorization: `bearer ${accessToken.token}`,
-      },
-    })
-
-    const workflowFile = await workflowFileRes.json()
-
-    let workflowContents
-
-    try {
-      workflowContents = Buffer.from(
-        workflowFile.content,
-        workflowFile.encoding
-      ).toString('utf-8')
-    } catch (err) {
-      // ignore workflows which, when
-      console.error(
-        `ERROR: cannot read workflow ${workflowFileUrl} with path ${workflow.path} for ${repository.full_name}`
-      )
-      continue
-    }
-
-    const workflowYaml = YAML.parse(workflowContents)
-
-    const usesAction = usesActionExpression.evaluate(workflowYaml)
-
-    if (usesAction) {
-      return true
-    }
-  }
-
-  return false
-}
-
-async function calculateBranchStatus(repository, accessToken, status) {
+async function calculateBranch(repository, accessToken, status) {
   const {
     branches_url: branchesUrl,
     default_branch: defaultBranch,
@@ -210,7 +260,12 @@ async function calculateBranchStatus(repository, accessToken, status) {
     protection.required_status_checks.enforcement_level === 'non_admins'
 }
 
-async function processRepository(installation, repository, accessToken) {
+async function processRepository(
+  installation,
+  repository,
+  accessToken,
+  nodeDistTags
+) {
   const { id: installationId } = installation
   const { full_name: fullName } = repository
 
@@ -219,7 +274,7 @@ async function processRepository(installation, repository, accessToken) {
   return redis.hset(
     installationId,
     fullName,
-    JSON.stringify(await calculateStatus(repository, accessToken))
+    JSON.stringify(await calculateStatus(repository, accessToken, nodeDistTags))
   )
 }
 
