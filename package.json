@@ -14,7 +14,8 @@
     "eject": "react-scripts eject",
     "start": "fastify start server",
     "dev:server": "fastify start -p 3001 -w -P -l debug server",
-    "heroku-postbuild": "npm run build"
+    "heroku-postbuild": "npm run build",
+    "gcp-build": "npm run build"
   },
   "dependencies": {
     "@material-ui/core": "^4.11.2",
